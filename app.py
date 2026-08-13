@@ -1,6 +1,6 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
 
@@ -11,12 +11,12 @@ import matplotlib.pyplot as plt
 st.title("State Point Analysis")
 
 st.write(
-    "Standalone secondary clarifier state point analysis prototype."
+    "Standalone secondary clarifier state point analysis."
 )
 
 
 # =========================================================
-# 1. INPUTS
+# 1. MODEL INPUTS
 # =========================================================
 
 st.header("Inputs")
@@ -27,80 +27,54 @@ col1, col2 = st.columns(2)
 
 with col1:
 
-    flow_MLd = st.number_input(
-        "Influent Flow Q (ML/d)",
+    Qi = st.number_input(
+        "Influent Flow Qi (m³/hr)",
         min_value=0.0,
-        value=20.0
+        value=100.0
     )
 
-    recycle_ratio = st.number_input(
-        "RAS Recycle Ratio QR/Q",
+    Qr = st.number_input(
+        "Recycle Flow Qr (m³/hr)",
         min_value=0.0,
-        value=0.5
+        value=40.5
     )
 
-    clarifier_area = st.number_input(
-        "Clarifier Area (m²)",
-        min_value=0.1,
-        value=500.0
-    )
-
-    mlss_mgL = st.number_input(
-        "MLSS (mg/L)",
-        min_value=0.0,
-        value=3500.0
+    A = st.number_input(
+        "Clarifier Area A (m²)",
+        min_value=0.01,
+        value=55.0
     )
 
 
 with col2:
 
-    vmax = st.number_input(
-        "Vmax (m/h)",
+    MLSS = st.number_input(
+        "MLSS (kg/m³)",
         min_value=0.0,
-        value=7.0
+        value=3.0
     )
 
-    k = st.number_input(
-        "Vesilind k",
+    SVI = st.number_input(
+        "SVI (mL/g)",
         min_value=0.0,
-        value=600.0
+        value=150.0
     )
 
-    max_concentration_mgL = st.number_input(
-        "Maximum Concentration for Plot (mg/L)",
-        min_value=1000.0,
-        value=15000.0
+    max_mlss = st.number_input(
+        "Maximum concentration shown (kg/m³)",
+        min_value=1.0,
+        value=20.0
     )
 
 
 # =========================================================
-# 2. UNIT CONVERSIONS
+# 2. CONCENTRATION RANGE
 # =========================================================
 
-# ML/day -> m3/hour
-
-Q = (
-    flow_MLd
-    * 1000
-    / 24
-)
-
-
-# R = QR / Q
-
-QR = (
-    recycle_ratio
-    * Q
-)
-
-
-# mg/L -> kg/m3
-#
-# 1000 mg/L = 1 kg/m3
-
-X_MLSS = (
-    mlss_mgL
-    / 1000
+x_range = np.linspace(
+    0,
+    max_mlss,
+    1000
 )
 
 
@@ -108,225 +82,196 @@ X_MLSS = (
 # 3. BASIC HYDRAULICS
 # =========================================================
 
-SOR = (
-    Q
-    / clarifier_area
+# State point total applied solids flux
+
+j_tap = (
+    (Qi + Qr)
+    * MLSS
+    / A
 )
 
 
-Ub = (
-    QR
-    / clarifier_area
+# Overflow velocity
+
+vi = (
+    Qi
+    / A
 )
 
 
-# =========================================================
-# 4. CONCENTRATION RANGE
-# =========================================================
+# Underflow / recycle velocity
 
-concentration_mgL = np.linspace(
-    0,
-    max_concentration_mgL,
-    500
+vr = (
+    Qr
+    / A
 )
 
 
-# Convert to kg/m3 for flux calculations
+# Recycle ratio
 
-concentration = (
-    concentration_mgL
-    / 1000
+if Qi > 0:
+
+    recycle_ratio = (
+        Qr
+        / Qi
+    )
+
+else:
+
+    recycle_ratio = 0.0
+
+
+# =========================================================
+# 4. SETTLING RELATIONSHIP
+# =========================================================
+
+# Existing empirical correlation from old script
+
+v_0 = (
+    17.4
+    * np.exp(
+        -0.0113
+        * SVI
+    )
 )
 
 
-# =========================================================
-# 5. SETTLING VELOCITY
-# =========================================================
+p_hin = (
 
-# Vesilind equation:
-#
-# Vi = Vmax * exp(-(k / 1,000,000) * X)
-#
-# X is mg/L in this equation
-
-settling_velocity = (
-
-    vmax
+    -0.9834
 
     * np.exp(
+        -0.00581
+        * SVI
+    )
 
-        -(k / 1_000_000)
+    + 1.043
+)
 
-        * concentration_mgL
+
+# Vesilind settling velocity across concentration range
+
+v_s = (
+
+    v_0
+
+    * np.exp(
+        -p_hin
+        * x_range
     )
 )
 
 
 # =========================================================
-# 6. GRAVITY SOLIDS FLUX
+# 5. SOLIDS FLUX CURVES
 # =========================================================
 
-gravity_flux = (
+# Gravity solids flux
 
-    concentration
-
-    * settling_velocity
+j_grav = (
+    v_s
+    * x_range
 )
 
 
-# Units:
-#
-# kg/m3 * m/h
-#
-# = kg/m2.h
+# Overflow operating line
 
-
-# =========================================================
-# 7. STATE POINT
-# =========================================================
-
-state_point_flux = (
-
-    SOR
-
-    * X_MLSS
+j_over = (
+    vi
+    * x_range
 )
 
 
-# =========================================================
-# 8. OVERFLOW OPERATING LINE
-# =========================================================
+# Underflow operating line
 
-overflow_line = (
+j_under = (
 
-    SOR
+    -vr
+    * x_range
 
-    * concentration
+    + j_tap
 )
 
 
 # =========================================================
-# 9. UNDERFLOW OPERATING LINE
+# 6. STATE POINT
 # =========================================================
 
-underflow_line = (
+j_state_point = (
+    vi
+    * MLSS
+)
 
-    state_point_flux
 
-    - Ub
-    * (
-        concentration
-        - X_MLSS
+# =========================================================
+# 7. SHC2 CHECK
+# =========================================================
+
+# Overflow flux at actual MLSS
+
+j_overflowAtMLSS = (
+
+    vi
+    * MLSS
+)
+
+
+# Gravity flux at actual MLSS
+
+j_gravityAtMLSS = (
+
+    v_0
+
+    * np.exp(
+        -p_hin
+        * MLSS
     )
+
+    * MLSS
 )
 
 
+if (
+    j_overflowAtMLSS
+    < j_gravityAtMLSS
+):
+
+    SHC2 = True
+
+else:
+
+    SHC2 = False
+
+
 # =========================================================
-# 10. RAS / UNDERFLOW CONCENTRATION
+# 8. UNDERFLOW X-INTERCEPT
 # =========================================================
 
-if Ub > 0:
+# This is where:
+#
+# j_under = 0
+#
+# therefore:
+#
+# x = j_tap / vr
 
-    Cu = (
+if vr > 0:
 
-        X_MLSS
-
-        + state_point_flux
-        / Ub
+    underflow_concentration = (
+        j_tap
+        / vr
     )
 
 else:
 
-    Cu = np.nan
-
-
-Cu_mgL = (
-    Cu
-    * 1000
-)
+    underflow_concentration = np.nan
 
 
 # =========================================================
-# 11. FEASIBILITY CHECK
+# 9. RESULTS SUMMARY
 # =========================================================
 
-if Ub > 0:
-
-    analysis_mask = (
-
-        (concentration >= X_MLSS)
-
-        &
-
-        (concentration <= Cu)
-    )
-
-
-    gravity_flux_analysis = (
-        gravity_flux[
-            analysis_mask
-        ]
-    )
-
-
-    underflow_analysis = (
-        underflow_line[
-            analysis_mask
-        ]
-    )
-
-
-    difference = (
-
-        underflow_analysis
-
-        - gravity_flux_analysis
-    )
-
-
-    if len(difference) > 0:
-
-        max_exceedance = (
-            difference.max()
-        )
-
-    else:
-
-        max_exceedance = np.nan
-
-
-    tolerance = 0.01
-
-
-    if np.isnan(max_exceedance):
-
-        status = "Unable to assess"
-
-    elif max_exceedance > tolerance:
-
-        status = "FAIL"
-
-    elif max_exceedance > -tolerance:
-
-        status = "CRITICAL"
-
-    else:
-
-        status = "PASS"
-
-
-else:
-
-    max_exceedance = np.nan
-
-    status = "Unable to assess"
-
-
-# =========================================================
-# 12. SUMMARY RESULTS
-# =========================================================
-
-st.header("SPA Results")
+st.header("Results")
 
 
 results = pd.DataFrame({
@@ -335,46 +280,68 @@ results = pd.DataFrame({
 
         "Influent Flow",
 
-        "RAS Flow",
+        "Recycle Flow",
 
         "Recycle Ratio",
 
-        "Surface Overflow Rate",
-
-        "Underflow Velocity",
+        "Clarifier Area",
 
         "MLSS",
 
-        "Calculated RAS Concentration",
+        "SVI",
 
-        "Maximum Flux Exceedance",
+        "Overflow Velocity",
 
-        "SPA Status"
+        "Recycle Velocity",
+
+        "v₀",
+
+        "Hindered Settling Parameter",
+
+        "Overflow Flux at MLSS",
+
+        "Gravity Flux at MLSS",
+
+        "Underflow Concentration",
+
+        "SHC2"
     ],
 
     "Value": [
 
-        f"{flow_MLd:.2f} ML/d",
+        f"{Qi:.2f} m³/hr",
 
-        f"{QR * 24 / 1000:.2f} ML/d",
+        f"{Qr:.2f} m³/hr",
 
-        f"{recycle_ratio:.2f}",
+        f"{recycle_ratio:.3f}",
 
-        f"{SOR:.3f} m/h",
+        f"{A:.2f} m²",
 
-        f"{Ub:.3f} m/h",
+        f"{MLSS:.2f} kg/m³",
 
-        f"{mlss_mgL:.0f} mg/L",
+        f"{SVI:.0f} mL/g",
 
-        f"{Cu_mgL:.0f} mg/L",
+        f"{vi:.3f} m/hr",
+
+        f"{vr:.3f} m/hr",
+
+        f"{v_0:.3f} m/hr",
+
+        f"{p_hin:.3f}",
+
+        f"{j_overflowAtMLSS:.3f} kg/m².hr",
+
+        f"{j_gravityAtMLSS:.3f} kg/m².hr",
 
         (
-            f"{max_exceedance:.3f} kg/m².h"
-            if not np.isnan(max_exceedance)
+            f"{underflow_concentration:.2f} kg/m³"
+            if not np.isnan(
+                underflow_concentration
+            )
             else "N/A"
         ),
 
-        status
+        "PASS" if SHC2 else "FAIL"
     ]
 })
 
@@ -387,148 +354,143 @@ st.dataframe(
 
 
 # =========================================================
-# 13. STATE POINT PLOT
+# 10. SIMPLE STATUS DISPLAY
+# =========================================================
+
+if SHC2:
+
+    st.success(
+        "SHC2 satisfied: overflow flux at MLSS is below the gravity flux."
+    )
+
+else:
+
+    st.error(
+        "SHC2 not satisfied: overflow flux at MLSS exceeds the gravity flux."
+    )
+
+
+# =========================================================
+# 11. STATE POINT PLOT
 # =========================================================
 
 st.header("State Point Diagram")
 
 
-fig, ax = plt.subplots()
+fig, ax = plt.subplots(
+    figsize=(8, 6)
+)
 
 
 # Gravity flux curve
 
 ax.plot(
-    concentration_mgL,
-    gravity_flux,
+    x_range,
+    j_grav,
     label="Gravity Flux"
 )
 
 
-# Overflow operating line
+# Overflow line
 
 ax.plot(
-    concentration_mgL,
-    overflow_line,
-    label="Overflow Line"
+    x_range,
+    j_over,
+    label="Overflow"
 )
 
 
-# Only show the physically useful portion
-# of the underflow operating line
+# Underflow line
 
-if Ub > 0:
-
-    underflow_plot_mask = (
-
-        (concentration >= X_MLSS)
-
-        &
-
-        (concentration <= Cu)
-    )
-
-
-    ax.plot(
-
-        concentration_mgL[
-            underflow_plot_mask
-        ],
-
-        underflow_line[
-            underflow_plot_mask
-        ],
-
-        label="Underflow Line"
-    )
+ax.plot(
+    x_range,
+    j_under,
+    label="Underflow"
+)
 
 
 # State point
 
 ax.scatter(
-
-    mlss_mgL,
-
-    state_point_flux,
-
+    MLSS,
+    j_state_point,
     s=80,
-
     label="State Point"
 )
 
 
-# RAS concentration intercept
+# Underflow concentration intercept
 
-if Ub > 0:
+if not np.isnan(
+    underflow_concentration
+):
 
     ax.scatter(
-
-        Cu_mgL,
-
+        underflow_concentration,
         0,
-
         s=60,
-
-        label="RAS Concentration"
+        label="Underflow Concentration"
     )
 
 
+# Labels
+
 ax.set_xlabel(
-    "Solids Concentration (mg/L)"
+    "Solids Concentration (kg/m³)"
 )
 
 ax.set_ylabel(
-    "Solids Flux (kg/m².h)"
+    "Solids Flux (kg/m².hr)"
 )
 
 ax.set_title(
-    "Secondary Clarifier State Point Analysis"
+    "State Point Analysis"
+)
+
+ax.legend()
+
+ax.set_ylim(
+    0,
+    None
 )
 
 ax.set_xlim(
     0,
-    max_concentration_mgL
-)
-
-ax.set_ylim(
-    bottom=0
+    max_mlss
 )
 
 ax.grid(
-    True,
-    alpha=0.3
+    True
 )
-
-ax.legend()
 
 
 st.pyplot(fig)
 
 
 # =========================================================
-# 14. OPTIONAL RAW CALCULATION TABLE
+# 12. OPTIONAL CALCULATION DATA
 # =========================================================
 
 with st.expander(
-    "Show Flux Calculation Data"
+    "Show Calculation Data"
 ):
 
     calculation_data = pd.DataFrame({
 
-        "Concentration (mg/L)":
-            concentration_mgL,
+        "Concentration (kg/m³)":
+            x_range,
 
-        "Settling Velocity (m/h)":
-            settling_velocity,
+        "Settling Velocity (m/hr)":
+            v_s,
 
-        "Gravity Flux (kg/m².h)":
-            gravity_flux,
+        "Gravity Flux (kg/m².hr)":
+            j_grav,
 
-        "Overflow Line (kg/m².h)":
-            overflow_line,
+        "Overflow Flux (kg/m².hr)":
+            j_over,
 
-        "Underflow Line (kg/m².h)":
-            underflow_line
+        "Underflow Flux (kg/m².hr)":
+            j_under
     })
 
 
