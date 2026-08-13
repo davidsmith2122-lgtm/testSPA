@@ -1,3 +1,5 @@
+# this is fancy version, scroll down the commented out part for the original, which is probably totally fine honestly
+
 import streamlit as st
 import numpy as np
 import pandas as pd
